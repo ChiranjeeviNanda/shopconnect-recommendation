@@ -1,6 +1,6 @@
 import os
 import pandas as pd
-from config import RAW_PATH, PROCESSED_DIR
+from config import RAW_DIR, PROCESSED_DIR
 from household_generator import generate_households, generate_food_dislikes
 from simulation_engine import run_simulation
 
@@ -8,10 +8,11 @@ def main():
     """Orchestrates the end-to-end synthetic data generation pipeline."""
     print("=== Starting Synthetic Data Generation (90 Days, ~300 Households) ===")
     
-    if not os.path.exists(RAW_PATH):
-        raise FileNotFoundError(f"Recipe catalog not found at {RAW_PATH}. Please place recipe_list.csv in data/raw/")
+    raw_path = os.path.join(RAW_DIR, "recipe_list.csv")
+    if not os.path.exists(raw_path):
+        raise FileNotFoundError(f"Recipe catalog not found at {raw_path}. Please place recipe_list.csv in data/raw/")
     
-    recipes_df = pd.read_csv(RAW_PATH)
+    recipes_df = pd.read_csv(raw_path)
     print(f"Loaded {len(recipes_df)} recipes from catalog.")
     
     os.makedirs(PROCESSED_DIR, exist_ok=True)
