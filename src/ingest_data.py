@@ -3,13 +3,16 @@ import logging
 import traceback
 import pandas as pd
 from sqlalchemy import create_engine, inspect, text
-from config import DATABASE_URL, RAW_DIR, PROCESSED_DIR, SCHEMA_PATH, DB_NAME, DB_HOST, DB_PORT
+from config import DATABASE_URL, RAW_DIR, PROCESSED_DIR, LOG_DIR, SCHEMA_PATH, DB_NAME, DB_HOST, DB_PORT
 
 # Configure logging for ingestion monitoring
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.StreamHandler()]
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler(os.path.join(LOG_DIR, "ingest_pipeline.log"), encoding="utf-8")
+    ]
 )
 logger = logging.getLogger(__name__)
 

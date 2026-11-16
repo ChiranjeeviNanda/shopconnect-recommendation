@@ -10,6 +10,7 @@ np.random.seed(RANDOM_SEED)
 # Data Directories and Paths
 RAW_DIR = os.path.join("data", "raw")
 PROCESSED_DIR = os.path.join("data", "processed")
+LOG_DIR = os.path.join("logs")
 SCHEMA_PATH = os.path.join(".", "db", "schema.sql")
 
 # Database Configuration and Credentials
