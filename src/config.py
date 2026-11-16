@@ -12,6 +12,7 @@ RAW_DIR = os.path.join("data", "raw")
 PROCESSED_DIR = os.path.join("data", "processed")
 LOG_DIR = os.path.join("logs")
 SCHEMA_PATH = os.path.join(".", "db", "schema.sql")
+VIEWS_PATH = os.path.join(".", "db", "views.sql")
 
 # Database Configuration and Credentials
 DB_USER = os.getenv("DB_USER", "postgres")
