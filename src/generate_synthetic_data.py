@@ -3,9 +3,9 @@ import logging
 import pandas as pd
 from config import RAW_DIR, PROCESSED_DIR, LOG_DIR
 from household_generator import generate_households, generate_food_dislikes
-from simulation_engine import run_simulation
+from simulation.simulation_engine import run_simulation
 
-# Configure logging to output to both console and a file
+# Configure logging for data generation monitoring
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
