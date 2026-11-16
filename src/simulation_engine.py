@@ -5,10 +5,11 @@ from datetime import datetime, timedelta
 
 def run_simulation(recipes_df, households_df, dislikes_df):
     """Simulates 90 days of meal plans, recipe scoring, interactions, and orders."""
+    # Identify a subset of households to simulate cold-start behavior (18% of total)
     cold_start_count = int(len(households_df) * 0.18)
     cold_start_households = set(random.sample(list(households_df['household_id']), cold_start_count))
     
-    start_date = datetime(2025, 10, 1)
+    start_date = datetime(2026, 9, 1)
     days_to_simulate = 90
     slots = ['breakfast', 'lunch', 'dinner']
     
@@ -22,10 +23,12 @@ def run_simulation(recipes_df, households_df, dislikes_df):
     interaction_id_counter = 1
     order_id_counter = 1
     
+    # Normalize recipe columns for robust filtering and matching during simulation
     recipes_df['diet_clean'] = recipes_df['diet'].fillna('vegetarian').str.lower()
     recipes_df['region_clean'] = recipes_df['region'].fillna('south_india').str.lower()
     recipes_df['meal_role_clean'] = recipes_df['meal_role'].fillna('main').str.lower()
     
+    # Generate weekly meal plans and behavioral interactions
     for _, h in households_df.iterrows():
         h_id = h['household_id']
         h_diet = h['diet']
@@ -35,6 +38,7 @@ def run_simulation(recipes_df, households_df, dislikes_df):
         
         h_dislikes = set(dislikes_df[dislikes_df['household_id'] == h_id]['ingredient_or_dish'].str.lower())
         
+        # Generate meal plans in 7-day increments over the 90-day simulation window
         for week_start_day in range(0, days_to_simulate, 7):
             plan_start = start_date + timedelta(days=week_start_day)
             plan_end = plan_start + timedelta(days=6)
@@ -72,6 +76,7 @@ def run_simulation(recipes_df, households_df, dislikes_df):
                     if role_candidates.empty:
                         role_candidates = recipes_df.copy()
 
+                    # Filter recipe roles appropriate for the specific meal slot and weekday/weekend timing
                     if slot == 'breakfast':
                         slot_filtered = role_candidates[role_candidates['meal_role_clean'].isin(['anchor', 'main', 'snack'])]
                         if is_weekday:
@@ -89,6 +94,7 @@ def run_simulation(recipes_df, households_df, dislikes_df):
                         if not slot_filtered.empty:
                             role_candidates = slot_filtered
                             
+                    # Exclude recipes containing ingredients or dishes disliked by the household
                     if h_dislikes:
                         def passes_dislikes(row):
                             text_blob = f"{row['name']} {row['ingredients_json']} {row['dish_family']}".lower()
@@ -100,6 +106,7 @@ def run_simulation(recipes_df, households_df, dislikes_df):
                     if role_candidates.empty:
                         role_candidates = recipes_df.copy()
                             
+                    # Calculate recommendation weights based on regional match, health goals, and recent repetition penalty
                     weights = []
                     for _, rec in role_candidates.iterrows():
                         w = 1.0
@@ -123,10 +130,12 @@ def run_simulation(recipes_df, households_df, dislikes_df):
                     else:
                         weights /= weight_sum
                         
+                    # Sample a recipe probabilistically from the weighted candidate pool
                     selected_recipe = role_candidates.sample(weights=weights).iloc[0]
                     recipe_code = selected_recipe['recipe_code']
                     meal_role = selected_recipe['meal_role_clean']
                     
+                    # Track recently selected recipes to prevent excessive repetition within the week
                     recent_recipes_in_week.append(recipe_code)
                     if len(recent_recipes_in_week) > 5:
                         recent_recipes_in_week.pop(0)
@@ -144,6 +153,7 @@ def run_simulation(recipes_df, households_df, dislikes_df):
                     if is_cold_start and interaction_count_for_plan >= 4:
                         continue
                         
+                    # Determine user interaction action (accepted, swapped, or skipped) based on probabilities
                     swap_prob = 0.08
                     if recipe_code in recent_recipes_in_week[:-1]:
                         swap_prob = 0.35
@@ -176,6 +186,7 @@ def run_simulation(recipes_df, households_df, dislikes_df):
                     interaction_count_for_plan += 1
                     plan_has_interaction = True
                     
+            # Generate grocery orders based on plan engagement and non-cold-start status
             if plan_has_interaction and not is_cold_start and random.random() > 0.12:
                 orders.append({
                     'order_id': f"ORD{order_id_counter:05d}",

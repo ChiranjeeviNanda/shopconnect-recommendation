@@ -15,6 +15,7 @@ def generate_households(num_households=300):
     health_goals = ['everyday', 'high-protein', 'weight-loss']
     
     households = []
+    # Generate demographic records for each household with randomized attributes
     for i in range(1, num_households + 1):
         h_id = f"H{i:03d}"
         households.append({
@@ -24,8 +25,9 @@ def generate_households(num_households=300):
             'diet': np.random.choice(diets, p=diet_weights),
             'spice_level': random.choice(spice_levels),
             'health_goal': np.random.choice(health_goals),
-            'created_at': datetime(2025, 1, 1).strftime('%Y-%m-%d %H:%M:%S')
+            'created_at': datetime(2026, 1, 1).strftime('%Y-%m-%d %H:%M:%S')
         })
+
     return pd.DataFrame(households)
 
 def generate_food_dislikes(households_df):
@@ -34,6 +36,7 @@ def generate_food_dislikes(households_df):
     food_dislikes = []
     dislike_id_counter = 1
     
+    # Assign random food dislikes based on probability to households
     for _, h in households_df.iterrows():
         if random.random() < 0.4:
             num_dislikes = random.choice([1, 2])

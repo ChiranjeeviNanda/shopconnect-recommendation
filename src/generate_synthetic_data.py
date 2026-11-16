@@ -16,11 +16,14 @@ def main():
     
     os.makedirs(PROCESSED_DIR, exist_ok=True)
     
+    # Generate households and their respective ingredient/dish dislikes
     households_df = generate_households(num_households=300)
     dislikes_df = generate_food_dislikes(households_df)
     
+    # Run the simulation engine to generate meal plans, items, user interactions, and orders
     plans_df, items_df, interactions_df, orders_df = run_simulation(recipes_df, households_df, dislikes_df)
     
+    # Export all generated datasets to CSV files in the processed data directory
     households_df.to_csv(os.path.join(PROCESSED_DIR, "households.csv"), index=False)
     dislikes_df.to_csv(os.path.join(PROCESSED_DIR, "food_dislikes.csv"), index=False)
     plans_df.to_csv(os.path.join(PROCESSED_DIR, "meal_plans.csv"), index=False)
