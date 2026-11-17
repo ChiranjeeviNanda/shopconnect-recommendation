@@ -1,3 +1,14 @@
+import re
+
+def prepare_recipes(recipes_df):
+    """Normalizes recipe columns for robust filtering and matching during simulation."""
+    df = recipes_df.copy()
+    df['diet_clean'] = df['diet'].fillna('vegetarian').str.lower()
+    df['region_clean'] = df['region'].fillna('south_india').str.lower()
+    df['meal_role_clean'] = df['meal_role'].fillna('main').str.lower()
+    return df
+
+
 def filter_by_diet(recipes_df, diet):
     """Filters the recipe catalog based on household dietary restrictions."""
     if diet == 'vegetarian':
@@ -34,18 +45,21 @@ def filter_by_slot(candidates_df, slot, is_weekday):
     return slot_filtered if not slot_filtered.empty else candidates_df
 
 
-def passes_dislikes(row, dislikes_set):
-    """Checks if a recipe avoids all disliked ingredients or dish families."""
-    text_blob = f"{row['name']} {row['ingredients_json']} {row['dish_family']}".lower()
-    return not any(d in text_blob for d in dislikes_set)
-
-
 def filter_by_dislikes(candidates_df, dislikes_set):
-    """Excludes recipes containing ingredients or dishes disliked by the household."""
-    if not dislikes_set:
+    """Excludes recipes containing ingredients or dishes disliked by the household efficiently."""
+    if not dislikes_set or candidates_df.empty:
         return candidates_df
 
-    dislike_filtered = candidates_df[
-        candidates_df.apply(lambda row: passes_dislikes(row, dislikes_set), axis=1)
-    ]
+    # Create a vectorized text blob series to avoid slow row-by-row apply
+    text_blobs = (
+        candidates_df['name'].str.lower().fillna('') + " " +
+        candidates_df['ingredients_json'].str.lower().fillna('') + " " +
+        candidates_df['dish_family'].str.lower().fillna('')
+    )
+
+    # Use a vectorized regex search instead of row-by-row apply
+    pattern = '|'.join(map(re.escape, dislikes_set))
+    mask = ~text_blobs.str.contains(pattern, regex=True, na=False)
+    dislike_filtered = candidates_df[mask]
+    
     return dislike_filtered if not dislike_filtered.empty else candidates_df

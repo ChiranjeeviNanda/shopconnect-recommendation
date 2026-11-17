@@ -45,10 +45,13 @@ def simulate_interaction(
                 else recipes_df[recipes_df['recipe_code'] != recipe_code]
             )
 
-        swapped_to = (
-            alt_candidates.sample(1).iloc[0]['recipe_code']
-            if not alt_candidates.empty else recipe_code
-        )
+        # Optimized fast random selection using iloc and random.randrange
+        if not alt_candidates.empty:
+            random_idx = random.randrange(len(alt_candidates))
+            swapped_to = alt_candidates.iloc[random_idx]['recipe_code']
+        else:
+            swapped_to = recipe_code
+
     elif rand_val < (swap_prob + skip_prob):
         action = 'skipped'
         swapped_to = None
