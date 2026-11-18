@@ -20,8 +20,8 @@ CREATE TABLE recipes (
     name VARCHAR(64) NOT NULL, -- Recipe name (max length ~46)
     description TEXT, -- Detailed description (~782 chars)
     status VARCHAR(16) NOT NULL, -- e.g., published/active status
-    is_public CHAR(1), -- 'Y'/'N' or boolean indicator
-    is_active CHAR(1), -- 'Y'/'N' or boolean indicator
+    is_public BOOLEAN, -- 't'/'f' boolean indicator
+    is_active BOOLEAN, -- 't'/'f' boolean indicator
     course VARCHAR(32), -- e.g., {side}, {main}
     meal_role VARCHAR(32), -- anchor, main, lentil, condiment, side, etc.
     dish_family VARCHAR(32), -- curry, dal, sabzi, dosa, etc.

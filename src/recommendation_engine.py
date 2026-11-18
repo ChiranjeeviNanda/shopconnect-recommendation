@@ -126,7 +126,7 @@ class RecommendationEngine:
 
         # 1. Load active recipes from PostgreSQL and prepare normalized columns
         with self.engine.connect() as conn:
-            recipes_df = pd.read_sql("SELECT * FROM recipes WHERE is_active = 'Y'", conn)
+            recipes_df = pd.read_sql("SELECT * FROM recipes WHERE is_active = TRUE", conn)
 
         clean_recipes = prepare_recipes(recipes_df)
         logger.info(f"Loaded {len(clean_recipes)} active recipes from database catalog.")
