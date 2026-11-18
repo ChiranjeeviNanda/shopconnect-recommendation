@@ -1,11 +1,34 @@
 import re
+import pandas as pd
 
 def prepare_recipes(recipes_df):
-    """Normalizes recipe columns for robust filtering and matching during simulation."""
+    """Normalizes recipe columns and infers missing meal_role values from course/name."""
     df = recipes_df.copy()
-    df['diet_clean'] = df['diet'].fillna('vegetarian').str.lower()
-    df['region_clean'] = df['region'].fillna('south_india').str.lower()
-    df['meal_role_clean'] = df['meal_role'].fillna('main').str.lower()
+    df['diet_clean'] = df['diet'].fillna('vegetarian').str.lower().str.strip()
+    df['region_clean'] = df['region'].fillna('south_india').str.lower().str.strip()
+    df['name_clean'] = df['name'].fillna('').str.lower().str.strip()
+
+    def resolve_role(row):
+        if pd.notna(row.get('meal_role')) and str(row['meal_role']).strip().lower() not in ('', 'none', 'nan'):
+            return str(row['meal_role']).strip().lower()
+        
+        course = str(row.get('course', '')).lower()
+        name = str(row.get('name', '')).lower()
+        family = str(row.get('dish_family', '')).lower()
+        
+        if 'dessert' in course or any(w in name for w in ['cake', 'halwa', 'payasam', 'kheer', 'sweet', 'ladoo']):
+            return 'dessert'
+        if 'beverage' in course or any(w in name for w in ['tea', 'coffee', 'juice', 'smoothie', 'lassi']):
+            return 'beverage'
+        if 'salad' in course or 'salad' in name or 'raita' in name:
+            return 'salad'
+        if 'side' in course or 'chutney' in name or 'pickle' in name:
+            return 'condiment'
+        if 'dal' in family or 'dal' in name or 'sambar' in name or 'rasam' in name:
+            return 'lentil'
+        return 'main'
+
+    df['meal_role_clean'] = df.apply(resolve_role, axis=1)
     return df
 
 

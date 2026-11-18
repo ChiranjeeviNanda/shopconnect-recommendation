@@ -107,10 +107,6 @@ class RecommendationEngine:
             return pd.read_sql(history_query, conn, params={"hid": household_id})
 
     def suggest(self, household_id: str, date: str, slot: str, meal_role: str) -> list:
-        """
-        Suggests top 5 recipes for a given household, date, slot, and meal_role 
-        leveraging modular filters, centralized time-decayed scoring weights, and PostgreSQL.
-        """
         logger.info(f"=== Generating suggestions for Household: {household_id} | Date: {date} | Slot: {slot} | Role: {meal_role} ===")
 
         profile = self._get_household_profile(household_id)
@@ -119,67 +115,49 @@ class RecommendationEngine:
 
         interaction_count = self._get_interaction_count(household_id)
         is_cold_start = interaction_count < 5
-        logger.info(f"Household Profile -> Diet: {profile['diet']}, Region: {profile['home_region']}, Goal: {profile['health_goal']}, Cold-Start: {is_cold_start} ({interaction_count} interactions)")
 
         curr_dt = datetime.strptime(date, "%Y-%m-%d")
         is_weekday = curr_dt.weekday() < 5
 
-        # 1. Load active recipes from PostgreSQL and prepare normalized columns
+        # 1. Load active recipes from PostgreSQL
         with self.engine.connect() as conn:
             recipes_df = pd.read_sql("SELECT * FROM recipes WHERE is_active = TRUE", conn)
 
         clean_recipes = prepare_recipes(recipes_df)
-        logger.info(f"Loaded {len(clean_recipes)} active recipes from database catalog.")
 
-        # 2. Apply modular filter pipeline (`recipe_filters.py`)
+        # 2. Apply modular filter pipeline (Diet, Slot, Dislikes only - NO hard role drop)
         diet_filtered = filter_by_diet(clean_recipes, profile["diet"].lower())
         slot_filtered = filter_by_slot(diet_filtered, slot.lower(), is_weekday)
-
-        # Enforce exact meal_role match (falling back to slot pool if restricted)
-        role_filtered = slot_filtered[slot_filtered['meal_role_clean'] == meal_role.lower()]
-        if role_filtered.empty:
-            logger.warning(f"No exact matches for meal_role '{meal_role}' under slot '{slot}'. Falling back to slot pool.")
-            role_filtered = slot_filtered
-
-        dislike_filtered = filter_by_dislikes(role_filtered, dislikes)
-        logger.info(f"Candidates remaining after diet, slot, and dislike filters: {len(dislike_filtered)}")
+        dislike_filtered = filter_by_dislikes(slot_filtered, dislikes)
 
         # 3. Enforce N-day Repeat Window Constraint (Hard constraint)
         candidates_df = dislike_filtered[~dislike_filtered['recipe_code'].isin(recent_recipes)].copy()
-
         if candidates_df.empty:
-            logger.warning("N-day repeat window filter cleared all candidates. Relaxing repeat constraint as fallback.")
             candidates_df = dislike_filtered.copy()
             if candidates_df.empty:
-                logger.error("All recipe candidates exhausted after hard constraints.")
                 return []
 
-        # Map recent dates back into a lookup dictionary for scoring cool-down penalties
         last_eaten_map = {rc: curr_dt - timedelta(days=1) for rc in recent_recipes}
 
-        # 4. Fetch interaction history for active households to pass into centralized scoring
+        # 4. Fetch interaction history (including swap targets)
         history_df = None
         if not is_cold_start:
             history_df = self._get_interaction_history(household_id)
-            if not history_df.empty:
-                logger.info(f"Loaded {len(history_df)} historical interactions for time-decayed scoring.")
 
-        # 5. Calculate unified scoring weights via `scoring.py`
+        # 5. Calculate unified scoring weights with soft role matching
         weights = calculate_recipe_weights(
             candidates_df,
             home_region=profile["home_region"].lower(),
             health_goal=profile["health_goal"].lower(),
             last_eaten_date=last_eaten_map,
             current_date=curr_dt,
-            history_df=history_df
+            history_df=history_df,
+            target_role=meal_role.lower() if meal_role else None
         )
 
         candidates_df['computed_score'] = weights
         top_recommendations = candidates_df.sort_values(by='computed_score', ascending=False).head(5)
 
-        logger.info(f"Successfully generated {len(top_recommendations)} recommendations.")
-
-        # Return formatted recommendation records for UI slot/swap rendering
         return top_recommendations[[
             'recipe_code', 'name', 'meal_role_clean', 'region_clean', 'cook_time_min', 'computed_score'
         ]].to_dict(orient='records')

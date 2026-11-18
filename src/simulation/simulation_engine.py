@@ -132,7 +132,7 @@ def run_simulation(recipes_df, households_df, dislikes_df):
                         interactions.append(interaction_record)
                         plan_interactions.append(interaction_record)
 
-                        # Append to rolling household history for subsequent weeks' time-decayed scoring
+                        # 1. Append original recipe interaction to rolling history
                         household_interaction_history.append({
                             'recipe_code': recipe_code,
                             'dish_family': selected_recipe.get('dish_family'),
@@ -141,12 +141,26 @@ def run_simulation(recipes_df, households_df, dislikes_df):
                             'action': action
                         })
 
+                        # 2. Log the swapped-to target recipe as a positive preference
+                        if action == 'swapped' and swapped_to:
+                            swapped_recipe_row = clean_recipes_df[clean_recipes_df['recipe_code'] == swapped_to]
+                            if not swapped_recipe_row.empty:
+                                household_interaction_history.append({
+                                    'recipe_code': swapped_to,
+                                    'dish_family': swapped_recipe_row.iloc[0].get('dish_family'),
+                                    'region': swapped_recipe_row.iloc[0].get('region'),
+                                    'interaction_date': current_date.strftime('%Y-%m-%d'),
+                                    'action': 'accepted'
+                                })
+
                         interaction_id_counter += 1
                         total_household_interactions += 1
                         plan_has_interaction = True
 
                     # Update last eaten date after interaction check so recency swap logic remains accurate
-                    last_eaten_date[recipe_code] = current_date
+                    actual_eaten_code = swapped_to if (can_interact and action == 'swapped' and swapped_to) else recipe_code
+                    if not (can_interact and action == 'skipped'):
+                        last_eaten_date[actual_eaten_code] = current_date
 
             # 5. Evaluate weekly order conversion
             if should_generate_order(h_goal, plan_interactions, plan_has_interaction, is_cold_start):

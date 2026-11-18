@@ -22,11 +22,10 @@ COMPATIBLE_ROLES = {
 }
 
 
-def calculate_swap_weights(candidates_df, home_region, health_goal):
-    """Calculates balanced, non-extreme selection weights to ensure recipe diversity during swaps."""
+def calculate_swap_weights(candidates_df, home_region, health_goal, last_eaten_date=None, current_date=None):
+    """Calculates balanced swap weights with recency cooldowns."""
     weights = np.ones(len(candidates_df))
 
-    # Milder multipliers prevent a few recipes from monopolizing all selections
     if home_region:
         region_mask = candidates_df['region_clean'].values == home_region
         weights[region_mask] *= 1.4
@@ -43,6 +42,20 @@ def calculate_swap_weights(candidates_df, home_region, health_goal):
             wl_mask = total_times < 25
             weights[wl_mask] *= 1.3
 
+    # Apply cooldown penalty so recently eaten meals aren't repeatedly chosen as swaps
+    if last_eaten_date and current_date:
+        for idx, rec_code in enumerate(candidates_df['recipe_code'].values):
+            if rec_code in last_eaten_date:
+                days_since = (current_date - last_eaten_date[rec_code]).days
+                if days_since < 7:
+                    weights[idx] *= 0.05
+                elif days_since < 14:
+                    weights[idx] *= 0.25
+
+    # Downweight recipes that appear multiple times under the same name in the catalog
+    name_counts = candidates_df['name_clean'].map(candidates_df['name_clean'].value_counts()).values
+    weights = weights / np.maximum(name_counts, 1)
+
     weight_sum = weights.sum()
     if weight_sum == 0:
         return np.ones(len(candidates_df)) / len(candidates_df)
@@ -55,7 +68,7 @@ def simulate_interaction(
     h_diet, h_dislikes, last_eaten_date, current_date,
     h_goal=None, h_region=None, current_slot='dinner'
 ):
-    """Determines user action and selects a diverse swap target using role-aware fallbacks."""
+    """Determines user action and selects a realistic, same-role swap target."""
     role_probs = ROLE_BEHAVIOR_MAP.get(meal_role, {'swap': 0.08, 'skip': 0.05})
     swap_prob = role_probs['swap']
     skip_prob = role_probs['skip']
@@ -69,33 +82,39 @@ def simulate_interaction(
 
     if rand_val < swap_prob:
         action = 'swapped'
-        alt_candidates = role_candidates[role_candidates['recipe_code'] != recipe_code]
+        
+        # Look up current recipe name to prevent swapping into duplicate recipe names
+        current_row = recipes_df[recipes_df['recipe_code'] == recipe_code]
+        current_name = current_row['name_clean'].iloc[0] if not current_row.empty else ''
 
-        # Role-Aware Fallback: Restrict to slot-compatible roles instead of dropping constraints
+        # 1. Primary pool: same slot candidates AND exact same meal_role, excluding same recipe/name
+        alt_candidates = role_candidates[
+            (role_candidates['recipe_code'] != recipe_code) &
+            (role_candidates['name_clean'] != current_name) &
+            (role_candidates['meal_role_clean'] == meal_role)
+        ]
+
+        # 2. Fallback pool: catalog-wide same meal_role matching diet & dislikes
         if alt_candidates.empty:
-            allowed_roles = COMPATIBLE_ROLES.get(current_slot, ['main', 'anchor', 'lentil'])
             broader_pool = recipes_df[
-                (recipes_df['recipe_code'] != recipe_code) & 
-                (recipes_df['meal_role_clean'].isin(allowed_roles))
+                (recipes_df['recipe_code'] != recipe_code) &
+                (recipes_df['name_clean'] != current_name) &
+                (recipes_df['meal_role_clean'] == meal_role)
             ]
             broader_pool = filter_by_diet(broader_pool, h_diet)
             broader_pool = filter_by_dislikes(broader_pool, h_dislikes)
-            
-            alt_candidates = (
-                broader_pool if not broader_pool.empty
-                else recipes_df[recipes_df['recipe_code'] != recipe_code]
-            )
+            alt_candidates = broader_pool
 
         if not alt_candidates.empty:
-            if h_goal or h_region:
-                weights = calculate_swap_weights(alt_candidates, h_region, h_goal)
-                selected_alt = alt_candidates.sample(weights=weights).iloc[0]
-            else:
-                random_idx = random.randrange(len(alt_candidates))
-                selected_alt = alt_candidates.iloc[random_idx]
+            weights = calculate_swap_weights(
+                alt_candidates, h_region, h_goal, last_eaten_date, current_date
+            )
+            selected_alt = alt_candidates.sample(weights=weights).iloc[0]
             swapped_to = selected_alt['recipe_code']
         else:
-            swapped_to = recipe_code
+            # If no valid alternative exists, keep original recipe as accepted
+            action = 'accepted'
+            swapped_to = None
 
     elif rand_val < (swap_prob + skip_prob):
         action = 'skipped'
