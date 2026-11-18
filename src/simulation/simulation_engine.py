@@ -48,6 +48,7 @@ def run_simulation(recipes_df, households_df, dislikes_df):
         # Track household-specific historical interactions across the simulation window for time decay
         household_interaction_history = []
         cached_history_df = None
+        total_household_interactions = 0
 
         # Generate meal plans in 7-day increments over the 90-day simulation window
         for week_start_day in range(0, days_to_simulate, 7):
@@ -69,7 +70,6 @@ def run_simulation(recipes_df, households_df, dislikes_df):
             last_eaten_date = {}
             plan_interactions = []
             plan_has_interaction = False
-            interaction_count_for_plan = 0
 
             for day_offset in range(7):
                 current_date = plan_start + timedelta(days=day_offset)
@@ -107,11 +107,16 @@ def run_simulation(recipes_df, households_df, dislikes_df):
                     })
                     item_id_counter += 1
 
-                    # 4. Simulate user interaction (respecting cold-start interaction limits)
-                    if not (is_cold_start and interaction_count_for_plan >= 4):
+                    # 4. Simulate user interaction respecting strict cold-start total limits (< 5 total interactions)
+                    can_interact = True
+                    if is_cold_start and total_household_interactions >= 4:
+                        can_interact = False
+
+                    if can_interact:
                         action, swapped_to = simulate_interaction(
                             clean_recipes_df, role_candidates, recipe_code, meal_role,
-                            h_diet, h_dislikes, last_eaten_date, current_date
+                            h_diet, h_dislikes, last_eaten_date, current_date,
+                            h_goal=h_goal, h_region=h_region, current_slot=slot
                         )
 
                         interaction_record = {
@@ -137,7 +142,7 @@ def run_simulation(recipes_df, households_df, dislikes_df):
                         })
 
                         interaction_id_counter += 1
-                        interaction_count_for_plan += 1
+                        total_household_interactions += 1
                         plan_has_interaction = True
 
                     # Update last eaten date after interaction check so recency swap logic remains accurate
