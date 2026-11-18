@@ -116,7 +116,7 @@ def run_simulation(recipes_df, households_df, dislikes_df):
                         action, swapped_to = simulate_interaction(
                             clean_recipes_df, role_candidates, recipe_code, meal_role,
                             h_diet, h_dislikes, last_eaten_date, current_date,
-                            h_goal=h_goal, h_region=h_region, current_slot=slot
+                            h_goal=h_goal, h_region=h_region
                         )
 
                         interaction_record = {

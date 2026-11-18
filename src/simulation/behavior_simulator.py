@@ -66,7 +66,7 @@ def calculate_swap_weights(candidates_df, home_region, health_goal, last_eaten_d
 def simulate_interaction(
     recipes_df, role_candidates, recipe_code, meal_role,
     h_diet, h_dislikes, last_eaten_date, current_date,
-    h_goal=None, h_region=None, current_slot='dinner'
+    h_goal=None, h_region=None
 ):
     """Determines user action and selects a realistic, same-role swap target."""
     role_probs = ROLE_BEHAVIOR_MAP.get(meal_role, {'swap': 0.08, 'skip': 0.05})
