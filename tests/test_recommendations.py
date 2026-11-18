@@ -113,3 +113,57 @@ def test_active_household_time_decay_personalization(engine):
     if len(suggestions) > 1:
         scores = [rec["computed_score"] for rec in suggestions]
         assert scores == sorted(scores, reverse=True), "Recommendations must be sorted by computed score descending."
+
+
+def test_cold_start_hard_constraints_enforced(engine):
+    """Proves that hard constraints (diet, dislikes, role) hold even for cold-start households with no interaction history."""
+    household_id = get_specific_household(engine.engine, cold_start=True)
+    test_date = "2026-09-15"
+    slot = "lunch"
+    role = "main"
+
+    suggestions = engine.suggest(household_id, test_date, slot, role)
+    if not suggestions:
+        pytest.skip(f"No recipes returned for cold-start household '{household_id}' to validate constraints against.")
+
+    profile = engine._get_household_profile(household_id)
+    dislikes = engine._get_household_dislikes(household_id)
+
+    with engine.engine.connect() as conn:
+        for rec in suggestions:
+            r_code = rec["recipe_code"]
+            row = conn.execute(
+                text("SELECT diet, meal_role, name, ingredients_json, dish_family FROM recipes WHERE recipe_code = :code"),
+                {"code": r_code}
+            ).fetchone()
+
+            # 1. Exact Diet Compatibility Constraint for Cold-Start
+            if profile["diet"].lower() in ["vegetarian", "vegan"]:
+                assert row.diet.lower() in ["vegetarian", "vegan", "jain", "satvik"], \
+                    f"Cold-start diet violation: Non-veg recipe assigned to vegetarian household ({row.name})"
+
+            # 2. Food Dislikes Blacklist Constraint for Cold-Start
+            text_blob = f"{row.name} {row.ingredients_json} {row.dish_family}".lower()
+            for d in dislikes:
+                assert d not in text_blob, f"Cold-start dislike violation: Blacklisted item '{d}' found in recipe '{row.name}'"
+
+            # 3. Exact Meal Role Constraint
+            assert rec["meal_role_clean"] == role.lower(), \
+                f"Cold-start meal role violation: Expected role '{role}', got '{rec['meal_role_clean']}' for recipe '{row.name}'"
+
+
+def test_cold_start_fallback_behavior(engine):
+    """Validates that cold-start households (< 5 interactions) successfully receive fallback suggestions based on profile/content."""
+    household_id = get_specific_household(engine.engine, cold_start=True)
+    test_date = "2026-09-15"
+    
+    # Confirm interaction count is strictly less than 5
+    history = engine._get_interaction_history(household_id)
+    assert len(history) < 5, "Test household is expected to be a cold-start user (< 5 interactions)."
+
+    suggestions = engine.suggest(household_id, test_date, "breakfast", "anchor")
+    
+    # Verify suggestions are successfully returned using content/popularity fallback
+    assert isinstance(suggestions, list)
+    assert len(suggestions) > 0, "Cold-start fallback failed to return recommendations."
+    assert all("computed_score" in rec for rec in suggestions), "All fallback recommendations must have a computed score."
