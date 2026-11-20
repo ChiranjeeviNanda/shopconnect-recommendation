@@ -15,24 +15,24 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
 def analyze_recipes(file_path):
     """
-    Analyzes the recipe catalog CSV file, providing dataset shape, missing values,
-    max string lengths, categorical distributions, tag formats, and numerical summaries.
+    Read the recipe CSV file and log dataset shape, missing values,
+    max string lengths, categorical counts (including status), tag formats,
+    and numeric summaries.
     """
     logger.info(f"=== Analyzing Recipe Catalog: {file_path} ===")
-    
-    # Check if the CSV file exists before attempting to load it
+
     if not os.path.exists(file_path):
-        logger.error(f"Error: File not found at {file_path}. Please ensure recipe_list.csv is placed in data/raw/")
+        logger.error(f"Error: File not found at {file_path}. Place recipe_list.csv in data/raw/")
         raise FileNotFoundError(f"Missing required dataset: {file_path}")
 
     try:
-        # Load the dataset into a pandas DataFrame
         df = pd.read_csv(file_path)
-        
+
         logger.info(f"1. Basic Dataset Shape: {df.shape[0]} rows, {df.shape[1]} columns")
-        
+
         logger.info("2. Column Data Types & Missing Values:")
         summary_df = pd.DataFrame({
             'Data Type': df.dtypes,
@@ -40,18 +40,20 @@ def analyze_recipes(file_path):
             'Null Percentage (%)': (df.isnull().sum() / len(df)) * 100
         })
         logger.info(f"\n{summary_df}")
-        
+
         logger.info("3. Maximum String Lengths (for VARCHAR sizing optimization):")
         for col in df.columns:
-            # Filter out nulls and convert non-strings safely to measure length
+            # Convert non-null values to string to find max character length
             max_len = df[col].dropna().astype(str).map(len).max() if not df[col].dropna().empty else 0
             logger.info(f"   - {col}: max length = {max_len} chars")
 
         logger.info("4. Categorical Field Distributions & Cardinality:")
-        categorical_cols = ['meal_role', 'region', 'course', 'cost_tier', 'dish_family']
+        categorical_cols = ['status', 'meal_role', 'region', 'course', 'cost_tier', 'dish_family']
         for col in categorical_cols:
             if col in df.columns:
-                logger.info(f"\n--- {col} (Unique values: {df[col].nunique()}) ---\n{df[col].value_counts().head(10)}")
+                # Include NaN values so missing statuses or roles remain visible
+                counts = df[col].value_counts(dropna=False)
+                logger.info(f"\n--- {col} (Unique values: {df[col].nunique(dropna=False)}) ---\n{counts.head(10)}")
 
         logger.info("5. Array / Tag Field Formatting Check:")
         tag_cols = ['cuisines', 'diet_tags', 'health_tags']
@@ -71,11 +73,12 @@ def analyze_recipes(file_path):
                 logger.info(f"   - {col}: min={df[col].min()}, max={df[col].max()}, mean={df[col].mean():.2f}")
 
         logger.info("=== Analysis Complete ===")
-        
-    except Exception as e:
-        logger.error(f"Failed to analyze recipe catalog due to error:")
+
+    except Exception:
+        logger.error("Failed to analyze recipe catalog due to error:")
         traceback.print_exc()
         raise
+
 
 if __name__ == "__main__":
     recipes_path = os.path.join("data", "raw", "recipe_list.csv")
