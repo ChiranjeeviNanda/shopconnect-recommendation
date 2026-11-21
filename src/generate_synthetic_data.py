@@ -12,7 +12,6 @@ logger = configure_logging("synthetic_data.log", __name__)
 
 def main():
     """Run the full synthetic data generation pipeline and write CSV files to PROCESSED_DIR."""
-    configure_logging()
     logger.info("=== Starting Synthetic Data Generation (90 Days, ~300 Households) ===")
 
     raw_path = os.path.join(RAW_DIR, "recipe_list.csv")

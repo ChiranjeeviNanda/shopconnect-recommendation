@@ -1,18 +1,9 @@
 import os
-import logging
 from sqlalchemy import create_engine, text
-from config import DATABASE_URL, LOG_DIR, VIEWS_PATH, DB_NAME, DB_HOST, DB_PORT
+from config import DATABASE_URL, VIEWS_PATH, DB_NAME, DB_HOST, DB_PORT
+from logging_config import configure_logging
 
-# Configure logging for views setup monitoring
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler(os.path.join(LOG_DIR, "views_pipeline.log"), encoding="utf-8")
-    ]
-)
-logger = logging.getLogger(__name__)
+logger = configure_logging("ingest_pipeline.log", __name__)
 
 def get_db_engine():
     """Create and return a SQLAlchemy database engine."""

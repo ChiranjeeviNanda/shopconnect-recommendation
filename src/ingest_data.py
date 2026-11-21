@@ -93,7 +93,6 @@ def ingest_processed_table(engine, file_name, table_name, dtype_mapping=None, pa
 
 def main():
     """Run the database ingestion workflow for parent tables first, then child tables."""
-    configure_logging()
     engine = get_db_engine()
 
     run_schema_setup(engine)
