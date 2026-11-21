@@ -54,24 +54,39 @@ def prepare_recipes(recipes_df):
     return df
 
 
+def _parse_diet_tokens(diet_val):
+    if diet_val is None or str(diet_val).strip().lower() in ("", "nan", "none", "<null>"):
+        return set()
+    cleaned = str(diet_val).strip().strip("{}").lower()
+    return {tok.strip() for tok in cleaned.split(",") if tok.strip()}
+
+
 def filter_by_diet(recipes_df, diet):
-    """Filter recipes strictly by household diet without falling back to disallowed diets."""
-    if recipes_df.empty or 'diet_clean' not in recipes_df.columns:
+    """Filter recipes strictly by household diet across comma/brace-delimited diet tags."""
+    if recipes_df.empty:
         return recipes_df.iloc[0:0].copy()
 
-    diet_norm = str(diet).lower().strip() if diet else ''
-    if diet_norm == 'vegetarian':
-        return recipes_df[recipes_df['diet_clean'].isin(['vegetarian', 'vegan', 'jain'])].copy()
-    if diet_norm == 'vegan':
-        return recipes_df[recipes_df['diet_clean'] == 'vegan'].copy()
-    if diet_norm == 'jain':
-        return recipes_df[recipes_df['diet_clean'] == 'jain'].copy()
-    if diet_norm in ('eggetarian', 'egg'):
-        return recipes_df[recipes_df['diet_clean'].isin(['vegetarian', 'vegan', 'jain', 'eggetarian', 'egg'])].copy()
-    if diet_norm in ('non-vegetarian', 'non_vegetarian', 'non vegetarian'):
-        return recipes_df.copy()
+    source_col = "diet_clean" if "diet_clean" in recipes_df.columns else ("diet" if "diet" in recipes_df.columns else None)
+    if not source_col:
+        return recipes_df.iloc[0:0].copy()
 
-    return recipes_df[recipes_df['diet_clean'] == diet_norm].copy()
+    diet_norm = str(diet).lower().strip() if diet else ""
+    token_sets = recipes_df[source_col].apply(_parse_diet_tokens)
+
+    if diet_norm == "jain":
+        mask = token_sets.apply(lambda s: "jain" in s)
+    elif diet_norm == "vegan":
+        mask = token_sets.apply(lambda s: "vegan" in s)
+    elif diet_norm in ("vegetarian", "pureveg"):
+        mask = token_sets.apply(lambda s: bool(s & {"vegetarian", "pureveg", "vegan", "jain", "sattvic"}))
+    elif diet_norm in ("eggetarian", "egg"):
+        mask = token_sets.apply(lambda s: bool(s & {"vegetarian", "pureveg", "vegan", "jain", "sattvic", "eggetarian", "egg"}))
+    elif diet_norm in ("non-vegetarian", "non_vegetarian", "non vegetarian", "nonveg"):
+        return recipes_df.copy()
+    else:
+        mask = token_sets.apply(lambda s: diet_norm in s)
+
+    return recipes_df[mask].copy()
 
 
 def filter_by_slot(candidates_df, slot, is_weekday):
