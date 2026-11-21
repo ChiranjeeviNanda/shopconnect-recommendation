@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta
 import pandas as pd
 from sqlalchemy import create_engine, text
+
+from .ai_explanations import generate_grounded_explanations
 from .config import DATABASE_URL
 from .logging_config import configure_logging
 
@@ -20,7 +22,9 @@ class RecommendationEngine:
         self.db_url = db_url
         self.engine = create_engine(db_url)
         self.repeat_window_days = repeat_window_days
-        logger.info(f"Initialized RecommendationEngine with repeat window: {repeat_window_days} days.")
+        logger.info(
+            f"Initialized RecommendationEngine with repeat window: {repeat_window_days} days."
+        )
 
     def _get_household_profile(self, household_id: str) -> dict:
         """Load household profile fields from the database."""
@@ -38,17 +42,25 @@ class RecommendationEngine:
 
     def _get_household_dislikes(self, household_id: str) -> set:
         """Load disliked ingredients or dishes for a household."""
-        query = text("SELECT ingredient_or_dish FROM food_dislikes WHERE household_id = :hid")
+        query = text(
+            "SELECT ingredient_or_dish FROM food_dislikes WHERE household_id = :hid"
+        )
         with self.engine.connect() as conn:
             rows = conn.execute(query, {"hid": household_id}).fetchall()
-            dislikes = {str(row[0]).lower().strip() for row in rows if row[0] is not None}
-            logger.debug(f"Loaded {len(dislikes)} food dislikes for household {household_id}.")
+            dislikes = {
+                str(row[0]).lower().strip() for row in rows if row[0] is not None
+            }
+            logger.debug(
+                f"Loaded {len(dislikes)} food dislikes for household {household_id}."
+            )
             return dislikes
 
     def _get_recent_recipe_codes(self, household_id: str, current_date: str) -> set:
         """Load recipe codes planned within the repeat window strictly before current_date."""
         curr_dt = datetime.strptime(current_date, "%Y-%m-%d")
-        window_start = (curr_dt - timedelta(days=self.repeat_window_days)).strftime("%Y-%m-%d")
+        window_start = (
+            curr_dt - timedelta(days=self.repeat_window_days)
+        ).strftime("%Y-%m-%d")
 
         query = text("""
             SELECT DISTINCT mpi.recipe_code 
@@ -59,16 +71,23 @@ class RecommendationEngine:
               AND mpi.date < :current_date
         """)
         with self.engine.connect() as conn:
-            rows = conn.execute(query, {
-                "hid": household_id,
-                "start_date": window_start,
-                "current_date": current_date
-            }).fetchall()
+            rows = conn.execute(
+                query,
+                {
+                    "hid": household_id,
+                    "start_date": window_start,
+                    "current_date": current_date,
+                },
+            ).fetchall()
             recent = {row[0] for row in rows}
-            logger.debug(f"Found {len(recent)} recently repeated recipes within {self.repeat_window_days} days for {household_id}.")
+            logger.debug(
+                f"Found {len(recent)} recently repeated recipes within {self.repeat_window_days} days for {household_id}."
+            )
             return recent
 
-    def _get_last_eaten_dates(self, household_id: str, current_date: str, lookback_days: int = 30) -> dict:
+    def _get_last_eaten_dates(
+        self, household_id: str, current_date: str, lookback_days: int = 30
+    ) -> dict:
         """Load the most recent date each recipe was eaten or accepted before current_date."""
         curr_dt = datetime.strptime(current_date, "%Y-%m-%d")
         window_start = (curr_dt - timedelta(days=lookback_days)).strftime("%Y-%m-%d")
@@ -89,20 +108,29 @@ class RecommendationEngine:
             GROUP BY eaten_code
         """)
         with self.engine.connect() as conn:
-            rows = conn.execute(query, {
-                "hid": household_id,
-                "start_date": window_start,
-                "current_date": current_date
-            }).fetchall()
+            rows = conn.execute(
+                query,
+                {
+                    "hid": household_id,
+                    "start_date": window_start,
+                    "current_date": current_date,
+                },
+            ).fetchall()
 
         last_eaten_map = {}
         for code, last_dt in rows:
             if code and last_dt:
-                parsed_dt = last_dt if isinstance(last_dt, datetime) else datetime.strptime(str(last_dt)[:10], "%Y-%m-%d")
+                parsed_dt = (
+                    last_dt
+                    if isinstance(last_dt, datetime)
+                    else datetime.strptime(str(last_dt)[:10], "%Y-%m-%d")
+                )
                 last_eaten_map[code] = parsed_dt
         return last_eaten_map
 
-    def _get_interaction_count(self, household_id: str, before_date: str | None = None) -> int:
+    def _get_interaction_count(
+        self, household_id: str, before_date: str | None = None
+    ) -> int:
         """Count historical interactions for a household before before_date when given."""
         if before_date:
             query = text("""
@@ -119,7 +147,9 @@ class RecommendationEngine:
             count = conn.execute(query, params).scalar()
             return int(count or 0)
 
-    def _get_interaction_history(self, household_id: str, before_date: str | None = None) -> pd.DataFrame:
+    def _get_interaction_history(
+        self, household_id: str, before_date: str | None = None
+    ) -> pd.DataFrame:
         """Load interaction history strictly before before_date when given."""
         if before_date:
             history_query = text("""
@@ -143,9 +173,19 @@ class RecommendationEngine:
         with self.engine.connect() as conn:
             return pd.read_sql(history_query, conn, params=params)
 
-    def suggest(self, household_id: str, date: str, slot: str, meal_role: str, k: int = 5) -> list:
+    def suggest(
+        self,
+        household_id: str,
+        date: str,
+        slot: str,
+        meal_role: str,
+        k: int = 5,
+        explain: bool = False,
+    ) -> list:
         """Return up to k recommended recipes for a household, date, slot, and meal role."""
-        logger.info(f"=== Generating suggestions for Household: {household_id} | Date: {date} | Slot: {slot} | Role: {meal_role} ===")
+        logger.info(
+            f"=== Generating suggestions for Household: {household_id} | Date: {date} | Slot: {slot} | Role: {meal_role} ==="
+        )
 
         profile = self._get_household_profile(household_id)
         dislikes = self._get_household_dislikes(household_id)
@@ -178,7 +218,9 @@ class RecommendationEngine:
 
         dislike_filtered = filter_by_dislikes(role_filtered, dislikes)
 
-        candidates_df = dislike_filtered[~dislike_filtered['recipe_code'].isin(recent_recipes)].copy()
+        candidates_df = dislike_filtered[
+            ~dislike_filtered["recipe_code"].isin(recent_recipes)
+        ].copy()
         if candidates_df.empty:
             candidates_df = dislike_filtered.copy()
             if candidates_df.empty:
@@ -202,15 +244,44 @@ class RecommendationEngine:
         )
 
         if "popularity_score" in candidates_df.columns:
-            pop_scores = pd.to_numeric(candidates_df["popularity_score"], errors="coerce").fillna(0.0).values
+            pop_scores = (
+                pd.to_numeric(candidates_df["popularity_score"], errors="coerce")
+                .fillna(0.0)
+                .values
+            )
         else:
             pop_scores = 0.0
 
         pop_multiplier = 1.0 + (pop_scores / 10.0) * 0.05
-        candidates_df['computed_score'] = weights * pop_multiplier
+        candidates_df["computed_score"] = weights * pop_multiplier
 
-        top_recommendations = candidates_df.sort_values(by='computed_score', ascending=False).head(k)
+        top_recommendations = candidates_df.sort_values(
+            by="computed_score", ascending=False
+        ).head(k)
 
-        return top_recommendations[[
-            'recipe_code', 'name', 'meal_role_clean', 'region_clean', 'cook_time_min', 'computed_score'
-        ]].to_dict(orient='records')
+        records = top_recommendations[
+            [
+                "recipe_code",
+                "name",
+                "meal_role_clean",
+                "region_clean",
+                "cook_time_min",
+                "computed_score",
+            ]
+        ].to_dict(orient="records")
+
+        if explain:
+            # Pass only features that shaped the score; never let the LLM re-rank
+            context = {
+                "home_region": profile.get("home_region"),
+                "health_goal": profile.get("health_goal"),
+                "spice_level": profile.get("spice_level"),
+                "slot": slot.lower(),
+                "is_weekday": is_weekday,
+                "is_cold_start": is_cold_start,
+            }
+            explanations = generate_grounded_explanations(records, context)
+            for rec, exp in zip(records, explanations):
+                rec["explanation"] = exp
+
+        return records

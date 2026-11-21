@@ -17,6 +17,8 @@ from src.simulation.recipe_filters import (
 
 logger = configure_logging("evaluate_engine.log", __name__)
 
+EXPLAIN_ROW_CAP = 25
+
 
 def compute_metrics_at_k(recommended_codes: list, actual_code: str, k: int = 5) -> tuple[int, float]:
     """Calculate Hit@K (Recall@K for single target) and NDCG@K for one target interaction."""
@@ -172,7 +174,9 @@ def run_offline_evaluation(
     test_start_date: str | None = None,
     train_days: int = 75,
     sample_limit: int | None = None,
-    k: int = 5
+    k: int = 5,
+    explain: bool = False,
+    print_samples: int = 5,
 ):
     """Run offline evaluation comparing RecommendationEngine against global and region popularity baselines."""
     db_engine = create_engine(DATABASE_URL)
@@ -228,6 +232,31 @@ def run_offline_evaluation(
         logger.warning(f"No test interactions found on or after {test_start_date}.")
         return
 
+    explained_rows = 0
+    remaining_prints = max(0, int(print_samples))
+    if explain:
+        if sample_limit is None and len(test_interactions) > EXPLAIN_ROW_CAP:
+            logger.warning(
+                "explain=True with no --limit across %d rows; disabling explain after first %d rows.",
+                len(test_interactions),
+                EXPLAIN_ROW_CAP,
+            )
+            print(
+                f"Warning: --explain used without --limit on {len(test_interactions)} rows; "
+                f"capping explanations to the first {EXPLAIN_ROW_CAP} rows."
+            )
+        elif sample_limit is not None and sample_limit > EXPLAIN_ROW_CAP:
+            logger.warning(
+                "explain=True with --limit=%d (> %d); disabling explain after first %d rows.",
+                sample_limit,
+                EXPLAIN_ROW_CAP,
+                EXPLAIN_ROW_CAP,
+            )
+            print(
+                f"Warning: --explain used with --limit={sample_limit} (> {EXPLAIN_ROW_CAP}); "
+                f"capping explanations to the first {EXPLAIN_ROW_CAP} rows."
+            )
+
     buckets = {
         "all": {"pers_h": [], "pers_n": [], "glob_h": [], "glob_n": [], "reg_h": [], "reg_n": []},
         "swap": {"pers_h": [], "pers_n": [], "glob_h": [], "glob_n": [], "reg_h": [], "reg_n": []},
@@ -244,7 +273,23 @@ def run_offline_evaluation(
         target_code = row["target_recipe_code"]
         bucket_key = "swap" if row["action"] == "swapped" else "confirm"
 
-        pers_suggestions = personalized_engine.suggest(household_id=hid, date=dt_str, slot=slot, meal_role=role, k=k)
+        row_explain = explain and (explained_rows < EXPLAIN_ROW_CAP)
+        pers_suggestions = personalized_engine.suggest(
+            household_id=hid,
+            date=dt_str,
+            slot=slot,
+            meal_role=role,
+            k=k,
+            explain=row_explain,
+        )
+        if row_explain:
+            explained_rows += 1
+            if remaining_prints > 0:
+                print(f"\n[Sample Explanation | HH={hid} | Date={dt_str} | Slot={slot} | Role={role}]")
+                for item in pers_suggestions:
+                    print(f"  - {item.get('name')} ({item.get('recipe_code')}): {item.get('explanation')}")
+                remaining_prints -= 1
+
         pers_codes = [s["recipe_code"] for s in pers_suggestions]
         p_hit, p_ndcg = compute_metrics_at_k(pers_codes, target_code, k=k)
 
@@ -314,11 +359,13 @@ if __name__ == "__main__":
     parser.add_argument("--train-days", type=int, default=75, help="Number of initial days to treat as training window (default: 75).")
     parser.add_argument("--limit", type=int, default=None, help="Optional max number of test interactions to evaluate.")
     parser.add_argument("--k", type=int, default=5, help="Top-K cutoff for Recall@K and NDCG@K (default: 5).")
+    parser.add_argument("--explain", action="store_true", default=False, help=f"Generate explanations for up to {EXPLAIN_ROW_CAP} test rows (off by default).")
 
     args = parser.parse_args()
     run_offline_evaluation(
         test_start_date=args.test_start,
         train_days=args.train_days,
         sample_limit=args.limit,
-        k=args.k
+        k=args.k,
+        explain=args.explain,
     )
