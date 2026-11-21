@@ -9,55 +9,39 @@ DROP VIEW IF EXISTS v_recipe_performance CASCADE;
 
 -- 1. Recipe & Meal Role Performance Metrics
 CREATE VIEW v_recipe_performance AS
+WITH interaction_stats AS (
+    -- Aggregate interaction counts and distinct households per recipe_code
+    SELECT
+        recipe_code,
+        COUNT(*) AS total_interactions,
+        COUNT(*) FILTER (WHERE action = 'cooked') AS cooked_count,
+        COUNT(*) FILTER (WHERE action = 'accepted') AS accepted_count,
+        COUNT(*) FILTER (WHERE action = 'not_cooked') AS not_cooked_count,
+        COUNT(*) FILTER (WHERE action = 'swapped') AS swapped_count,
+        COUNT(*) FILTER (WHERE action = 'skipped') AS skipped_count,
+        COUNT(DISTINCT household_id) AS active_households
+    FROM interactions
+    GROUP BY recipe_code
+)
 SELECT
-    r.recipe_code,
-    r.name AS recipe_name,
-    r.meal_role,
-    r.diet,
-    COUNT(i.interaction_id) AS total_interactions,
-    ROUND(
-        SUM(
-            CASE
-                WHEN i.action = 'accepted' THEN 1
-                ELSE 0
-            END
-        ) * 100.0 / NULLIF(COUNT(i.interaction_id), 0),
-        2
-    ) AS acceptance_rate_pct,
-    ROUND(
-        SUM(
-            CASE
-                WHEN i.action = 'swapped' THEN 1
-                ELSE 0
-            END
-        ) * 100.0 / NULLIF(COUNT(i.interaction_id), 0),
-        2
-    ) AS swap_rate_pct,
-    ROUND(
-        SUM(
-            CASE
-                WHEN i.action = 'skipped' THEN 1
-                ELSE 0
-            END
-        ) * 100.0 / NULLIF(COUNT(i.interaction_id), 0),
-        2
-    ) AS skip_rate_pct,
-    ROUND(
-        SUM(
-            CASE
-                WHEN i.action = 'cooked' THEN 1
-                ELSE 0
-            END
-        ) * 100.0 / NULLIF(COUNT(i.interaction_id), 0),
-        2
-    ) AS cook_rate_pct
-FROM recipes r
-    LEFT JOIN interactions i ON r.recipe_code = i.recipe_code
-GROUP BY
     r.recipe_code,
     r.name,
     r.meal_role,
-    r.diet;
+    COALESCE(s.total_interactions, 0) AS total_interactions,
+    COALESCE(s.active_households, 0) AS active_households,
+    CASE
+        WHEN COALESCE(s.active_households, 0) > 0
+        THEN ROUND(COALESCE(s.total_interactions, 0)::numeric / s.active_households, 2)
+        ELSE 0
+    END AS interactions_per_household,
+    ROUND(100.0 * COALESCE(s.cooked_count, 0) / NULLIF(s.total_interactions, 0), 2) AS cook_rate_pct,
+    ROUND(100.0 * COALESCE(s.accepted_count, 0) / NULLIF(s.total_interactions, 0), 2) AS acceptance_rate_pct,
+    ROUND(100.0 * COALESCE(s.not_cooked_count, 0) / NULLIF(s.total_interactions, 0), 2) AS not_cooked_rate_pct,
+    ROUND(100.0 * COALESCE(s.swapped_count, 0) / NULLIF(s.total_interactions, 0), 2) AS swap_rate_pct,
+    ROUND(100.0 * COALESCE(s.skipped_count, 0) / NULLIF(s.total_interactions, 0), 2) AS skip_rate_pct
+FROM recipes r
+LEFT JOIN interaction_stats s
+    ON r.recipe_code = s.recipe_code;
 
 -- 2. Most Common Swap Pairs (A -> B Transitions)
 CREATE VIEW v_common_swap_pairs AS
