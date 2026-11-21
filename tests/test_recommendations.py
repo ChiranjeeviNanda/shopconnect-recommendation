@@ -64,8 +64,9 @@ def test_hard_constraints_enforced(engine):
     role = "main"
 
     suggestions = engine.suggest(household_id, test_date, slot, role)
-    if not suggestions:
-        pytest.skip(f"No recipes returned for household '{household_id}' to validate constraints against.")
+    # if not suggestions:
+    #     pytest.skip(f"No recipes returned for household '{household_id}' to validate constraints against.")
+    assert suggestions, f"No recipes returned for household '{household_id}' to validate constraints against."
 
     profile = engine._get_household_profile(household_id)
     dislikes = engine._get_household_dislikes(household_id)
@@ -123,8 +124,9 @@ def test_cold_start_hard_constraints_enforced(engine):
     role = "main"
 
     suggestions = engine.suggest(household_id, test_date, slot, role)
-    if not suggestions:
-        pytest.skip(f"No recipes returned for cold-start household '{household_id}' to validate constraints against.")
+    # if not suggestions:
+    #     pytest.skip(f"No recipes returned for cold-start household '{household_id}' to validate constraints against.")
+    assert suggestions, f"No recipes returned for cold-start household '{household_id}' to validate constraints against."
 
     profile = engine._get_household_profile(household_id)
     dislikes = engine._get_household_dislikes(household_id)
