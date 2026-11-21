@@ -1,29 +1,25 @@
 import random
 import numpy as np
 import pandas as pd
-from .recipe_filters import filter_by_diet, filter_by_dislikes
+from .recipe_filters import SLOT_ROLES, filter_by_diet, filter_by_dislikes
 
 ROLE_BEHAVIOR_MAP = {
-    'main': {'swap': 0.08, 'skip': 0.05},
-    'anchor': {'swap': 0.06, 'skip': 0.04},
-    'lentil': {'swap': 0.07, 'skip': 0.05},
-    'snack': {'swap': 0.15, 'skip': 0.10},
-    'dessert': {'swap': 0.12, 'skip': 0.08},
-    'condiment': {'swap': 0.04, 'skip': 0.03},
-    'beverage': {'swap': 0.05, 'skip': 0.02},
-    'salad': {'swap': 0.10, 'skip': 0.07},
-    'yogurt_side': {'swap': 0.05, 'skip': 0.04}
+    'main': {'swap': 0.12, 'skip': 0.05},
+    'anchor': {'swap': 0.10, 'skip': 0.04},
+    'lentil': {'swap': 0.11, 'skip': 0.05},
+    'snack': {'swap': 0.18, 'skip': 0.10},
+    'dessert': {'swap': 0.15, 'skip': 0.08},
+    'condiment': {'swap': 0.07, 'skip': 0.03},
+    'beverage': {'swap': 0.08, 'skip': 0.02},
+    'salad': {'swap': 0.14, 'skip': 0.07},
+    'yogurt_side': {'swap': 0.08, 'skip': 0.04}
 }
 
-COMPATIBLE_ROLES = {
-    'breakfast': ['anchor', 'main', 'snack', 'beverage', 'yogurt_side'],
-    'lunch': ['main', 'lentil', 'side', 'anchor', 'salad', 'yogurt_side', 'beverage'],
-    'dinner': ['main', 'lentil', 'condiment', 'dessert', 'anchor', 'salad', 'yogurt_side', 'beverage']
-}
+COMPATIBLE_ROLES = SLOT_ROLES
 
 
 def calculate_swap_weights(candidates_df, home_region, health_goal, last_eaten_date=None, current_date=None):
-    """Calculates balanced swap weights with recency cooldowns."""
+    """Calculate swap weights using home region, health goal, and recent eat dates."""
     weights = np.ones(len(candidates_df))
 
     if home_region:
@@ -66,14 +62,19 @@ def calculate_swap_weights(candidates_df, home_region, health_goal, last_eaten_d
 def simulate_interaction(
     recipes_df, role_candidates, recipe_code, meal_role,
     h_diet, h_dislikes, last_eaten_date, current_date,
-    h_goal=None, h_region=None
+    h_goal=None, h_region=None, week_eaten_counts=None, slot=None, engagement_rate=1.0
 ):
-    """Determines user action and selects a realistic, same-role swap target."""
-    role_probs = ROLE_BEHAVIOR_MAP.get(meal_role, {'swap': 0.08, 'skip': 0.05})
+    """Simulate a user action and select a valid swap recipe when swapped."""
+    effective_eng = max(0.2, min(1.0, float(engagement_rate)))
+    role_probs = ROLE_BEHAVIOR_MAP.get(meal_role, {'swap': 0.12, 'skip': 0.05})
     swap_prob = role_probs['swap']
-    skip_prob = role_probs['skip']
+    skip_prob = min(0.85, role_probs['skip'] + ((1.0 - effective_eng) * 0.25))
 
-    if recipe_code in last_eaten_date:
+    repeat_count = (week_eaten_counts or {}).get(recipe_code, 0)
+    if repeat_count >= 1:
+        swap_prob = min(0.85, max(swap_prob, 0.35) + (0.10 * (repeat_count - 1)))
+
+    if recipe_code in (last_eaten_date or {}):
         days_since = (current_date - last_eaten_date[recipe_code]).days
         if days_since < 5:
             swap_prob = max(swap_prob, 0.35)
@@ -82,27 +83,43 @@ def simulate_interaction(
 
     if rand_val < swap_prob:
         action = 'swapped'
-        
-        # Look up current recipe name to prevent swapping into duplicate recipe names
+
         current_row = recipes_df[recipes_df['recipe_code'] == recipe_code]
         current_name = current_row['name_clean'].iloc[0] if not current_row.empty else ''
 
-        # 1. Primary pool: same slot candidates AND exact same meal_role, excluding same recipe/name
+        # Search exact meal role first to keep swap targets closely matched
         alt_candidates = role_candidates[
             (role_candidates['recipe_code'] != recipe_code) &
             (role_candidates['name_clean'] != current_name) &
             (role_candidates['meal_role_clean'] == meal_role)
         ]
+        alt_candidates = filter_by_diet(alt_candidates, h_diet)
+        alt_candidates = filter_by_dislikes(alt_candidates, h_dislikes)
 
-        # 2. Fallback pool: catalog-wide same meal_role matching diet & dislikes
+        # Fall back to compatible slot roles if no exact role match exists
         if alt_candidates.empty:
+            compatible_roles = COMPATIBLE_ROLES.get(str(slot).lower().strip(), [meal_role]) if slot else [meal_role]
+            role_pool = compatible_roles if meal_role in compatible_roles else [meal_role] + list(compatible_roles)
+            alt_candidates = role_candidates[
+                (role_candidates['recipe_code'] != recipe_code) &
+                (role_candidates['name_clean'] != current_name) &
+                (role_candidates['meal_role_clean'].isin(role_pool))
+            ]
+            alt_candidates = filter_by_diet(alt_candidates, h_diet)
+            alt_candidates = filter_by_dislikes(alt_candidates, h_dislikes)
+
+        if alt_candidates.empty:
+            compatible_roles = COMPATIBLE_ROLES.get(str(slot).lower().strip(), [meal_role]) if slot else [meal_role]
+            role_pool = compatible_roles if meal_role in compatible_roles else [meal_role] + list(compatible_roles)
             broader_pool = recipes_df[
                 (recipes_df['recipe_code'] != recipe_code) &
                 (recipes_df['name_clean'] != current_name) &
-                (recipes_df['meal_role_clean'] == meal_role)
+                (recipes_df['meal_role_clean'].isin(role_pool))
             ]
             broader_pool = filter_by_diet(broader_pool, h_diet)
             broader_pool = filter_by_dislikes(broader_pool, h_dislikes)
+            if broader_pool.empty and not recipes_df.empty:
+                broader_pool = recipes_df[recipes_df['recipe_code'] != recipe_code]
             alt_candidates = broader_pool
 
         if not alt_candidates.empty:
@@ -120,8 +137,12 @@ def simulate_interaction(
         action = 'skipped'
         swapped_to = None
     else:
-        action = 'accepted'
-        if random.random() < 0.10:
+        roll = random.random()
+        if roll < 0.70:
+            action = 'cooked'
+        elif roll < 0.90:
+            action = 'accepted'
+        else:
             action = 'not_cooked'
         swapped_to = None
 
