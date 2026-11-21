@@ -1,19 +1,9 @@
 import os
-import logging
 import traceback
 import pandas as pd
-from config import LOG_DIR
+from logging_config import configure_logging
 
-# Configure logging for analysis monitoring
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler(os.path.join(LOG_DIR, "analysis_pipeline.log"), encoding="utf-8")
-    ]
-)
-logger = logging.getLogger(__name__)
+logger = configure_logging("analysis_pipeline.log", __name__)
 
 
 def analyze_recipes(file_path):
