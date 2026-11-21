@@ -4,16 +4,16 @@ import pandas as pd
 from datetime import datetime
 
 def generate_households(num_households=300):
-    """Generates synthetic household demographics and preferences."""
+    """Generate household profiles with region, diet, spice level, and health goal attributes."""
     regions = ['south_india', 'north_india', 'west_india', 'east_india']
     region_weights = [0.55, 0.20, 0.20, 0.05]
-    
+
     diets = ['vegetarian', 'non-vegetarian', 'vegan', 'jain']
     diet_weights = [0.60, 0.25, 0.10, 0.05]
-    
+
     spice_levels = ['mild', 'medium', 'spicy']
     health_goals = ['everyday', 'high-protein', 'weight-loss']
-    
+
     households = []
     # Generate demographic records for each household with randomized attributes
     for i in range(1, num_households + 1):
@@ -30,13 +30,13 @@ def generate_households(num_households=300):
 
     return pd.DataFrame(households)
 
+
 def generate_food_dislikes(households_df):
-    """Generates household-specific food dislikes for common ingredients."""
+    """Generate disliked ingredients or dishes for households, returning a consistent schema even when empty."""
     common_dislikes = ['mushroom', 'brinjal', 'capsicum', 'paneer', 'seafood', 'gourd', 'jackfruit']
     food_dislikes = []
     dislike_id_counter = 1
-    
-    # Assign random food dislikes based on probability to households
+
     for _, h in households_df.iterrows():
         if random.random() < 0.4:
             num_dislikes = random.choice([1, 2])
@@ -49,4 +49,8 @@ def generate_food_dislikes(households_df):
                 })
                 dislike_id_counter += 1
                 
+    if not food_dislikes:
+        # Preserve expected columns so downstream groupby operations do not fail on empty data
+        return pd.DataFrame(columns=['dislike_id', 'household_id', 'ingredient_or_dish'])
+
     return pd.DataFrame(food_dislikes)
