@@ -9,8 +9,8 @@ logger = configure_logging("analysis_pipeline.log", __name__)
 def analyze_recipes(file_path):
     """
     Read the recipe CSV file and log dataset shape, missing values,
-    max string lengths, categorical counts (including status), tag formats,
-    and numeric summaries.
+    max string lengths, categorical counts (including status and diet),
+    tag formats, and numeric summaries.
     """
     logger.info(f"=== Analyzing Recipe Catalog: {file_path} ===")
 
@@ -38,7 +38,7 @@ def analyze_recipes(file_path):
             logger.info(f"   - {col}: max length = {max_len} chars")
 
         logger.info("4. Categorical Field Distributions & Cardinality:")
-        categorical_cols = ['status', 'meal_role', 'region', 'course', 'cost_tier', 'dish_family']
+        categorical_cols = ['status', 'diet', 'meal_role', 'region', 'course', 'cost_tier', 'dish_family']
         for col in categorical_cols:
             if col in df.columns:
                 # Include NaN values so missing statuses or roles remain visible
@@ -51,7 +51,7 @@ def analyze_recipes(file_path):
             if col in df.columns:
                 sample_val = df[col].dropna().iloc[0] if not df[col].dropna().empty else "N/A"
                 logger.info(f"   - {col}: Sample value -> {repr(sample_val)} (Type: {type(sample_val)})")
-                
+
                 # Check if stored as string representation of lists (e.g., "['veg', 'gluten-free']")
                 if isinstance(sample_val, str) and (sample_val.startswith('[') or ',' in sample_val):
                     logger.info(f"    [Note] {col} appears to be serialized text. Ingestion will require parsing (e.g., ast.literal_eval or splitting by comma).")
