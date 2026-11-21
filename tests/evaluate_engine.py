@@ -237,24 +237,16 @@ def run_offline_evaluation(
     if explain:
         if sample_limit is None and len(test_interactions) > EXPLAIN_ROW_CAP:
             logger.warning(
-                "explain=True with no --limit across %d rows; disabling explain after first %d rows.",
+                "explain=True with no --limit across %d rows; capping explanations to the first %d rows.",
                 len(test_interactions),
                 EXPLAIN_ROW_CAP,
             )
-            print(
-                f"Warning: --explain used without --limit on {len(test_interactions)} rows; "
-                f"capping explanations to the first {EXPLAIN_ROW_CAP} rows."
-            )
         elif sample_limit is not None and sample_limit > EXPLAIN_ROW_CAP:
             logger.warning(
-                "explain=True with --limit=%d (> %d); disabling explain after first %d rows.",
+                "explain=True with --limit=%d (> %d); capping explanations to the first %d rows.",
                 sample_limit,
                 EXPLAIN_ROW_CAP,
                 EXPLAIN_ROW_CAP,
-            )
-            print(
-                f"Warning: --explain used with --limit={sample_limit} (> {EXPLAIN_ROW_CAP}); "
-                f"capping explanations to the first {EXPLAIN_ROW_CAP} rows."
             )
 
     buckets = {
@@ -285,9 +277,14 @@ def run_offline_evaluation(
         if row_explain:
             explained_rows += 1
             if remaining_prints > 0:
-                print(f"\n[Sample Explanation | HH={hid} | Date={dt_str} | Slot={slot} | Role={role}]")
+                sample_lines = [
+                    f"[Sample Explanation | HH={hid} | Date={dt_str} | Slot={slot} | Role={role}]"
+                ]
                 for item in pers_suggestions:
-                    print(f"  - {item.get('name')} ({item.get('recipe_code')}): {item.get('explanation')}")
+                    sample_lines.append(
+                        f"  - {item.get('name')} ({item.get('recipe_code')}): {item.get('explanation')}"
+                    )
+                logger.info("\n".join(sample_lines))
                 remaining_prints -= 1
 
         pers_codes = [s["recipe_code"] for s in pers_suggestions]
@@ -318,17 +315,20 @@ def run_offline_evaluation(
     rec_lift_vs_global = ((p_rec - g_rec) / g_rec * 100) if g_rec > 0 else 0.0
     ndcg_lift_vs_global = ((p_ndcg - g_ndcg) / g_ndcg * 100) if g_ndcg > 0 else 0.0
 
-    print("\n" + "=" * 78)
-    print(f"OFFLINE EVALUATION REPORT (Test Start: {test_start_date} | N={total_n} | K={k})")
-    print("=" * 78)
-    print(f"{'Model':<28} | {f'Hits@{k}':<12} | {f'Recall@{k}':<12} | {f'NDCG@{k}':<12}")
-    print("-" * 78)
-    print(f"{'Global Popularity':<28} | {f'{g_sum}/{total_n}':<12} | {g_rec:<12.4f} | {g_ndcg:<12.4f}")
-    print(f"{'Region + Popularity':<28} | {f'{r_sum}/{total_n}':<12} | {r_rec:<12.4f} | {r_ndcg:<12.4f}")
-    print(f"{'Personalized Engine':<28} | {f'{p_sum}/{total_n}':<12} | {p_rec:<12.4f} | {p_ndcg:<12.4f}")
-    print("-" * 78)
-    print(f"{'Lift vs Global Pop (%)':<28} | {'-':<12} | {rec_lift_vs_global:>+11.2f}% | {ndcg_lift_vs_global:>+11.2f}%")
-    print("=" * 78)
+    report_lines = [
+        "",
+        "=" * 78,
+        f"OFFLINE EVALUATION REPORT (Test Start: {test_start_date} | N={total_n} | K={k})",
+        "=" * 78,
+        f"{'Model':<28} | {f'Hits@{k}':<12} | {f'Recall@{k}':<12} | {f'NDCG@{k}':<12}",
+        "-" * 78,
+        f"{'Global Popularity':<28} | {f'{g_sum}/{total_n}':<12} | {g_rec:<12.4f} | {g_ndcg:<12.4f}",
+        f"{'Region + Popularity':<28} | {f'{r_sum}/{total_n}':<12} | {r_rec:<12.4f} | {r_ndcg:<12.4f}",
+        f"{'Personalized Engine':<28} | {f'{p_sum}/{total_n}':<12} | {p_rec:<12.4f} | {p_ndcg:<12.4f}",
+        "-" * 78,
+        f"{'Lift vs Global Pop (%)':<28} | {'-':<12} | {rec_lift_vs_global:>+11.2f}% | {ndcg_lift_vs_global:>+11.2f}%",
+        "=" * 78,
+    ]
 
     for label, key in [("Swap-Only Events", "swap"), ("Accepted/Cooked Events", "confirm")]:
         cnt = len(buckets[key]["pers_h"])
@@ -336,10 +336,12 @@ def run_offline_evaluation(
             sg_sum, sg_rec, sg_ndcg = _summarize_bucket(buckets[key]["glob_h"], buckets[key]["glob_n"])
             sr_sum, sr_rec, sr_ndcg = _summarize_bucket(buckets[key]["reg_h"], buckets[key]["reg_n"])
             sp_sum, sp_rec, sp_ndcg = _summarize_bucket(buckets[key]["pers_h"], buckets[key]["pers_n"])
-            print(f"\n{label} (N={cnt}):")
-            print(f"  Global Popularity   -> Hits@{k}: {sg_sum}/{cnt} | Recall@{k}: {sg_rec:.4f} | NDCG@{k}: {sg_ndcg:.4f}")
-            print(f"  Region + Popularity -> Hits@{k}: {sr_sum}/{cnt} | Recall@{k}: {sr_rec:.4f} | NDCG@{k}: {sr_ndcg:.4f}")
-            print(f"  Personalized Engine -> Hits@{k}: {sp_sum}/{cnt} | Recall@{k}: {sp_rec:.4f} | NDCG@{k}: {sp_ndcg:.4f}")
+            report_lines.extend([
+                f"\n{label} (N={cnt}):",
+                f"  Global Popularity   -> Hits@{k}: {sg_sum}/{cnt} | Recall@{k}: {sg_rec:.4f} | NDCG@{k}: {sg_ndcg:.4f}",
+                f"  Region + Popularity -> Hits@{k}: {sr_sum}/{cnt} | Recall@{k}: {sr_rec:.4f} | NDCG@{k}: {sr_ndcg:.4f}",
+                f"  Personalized Engine -> Hits@{k}: {sp_sum}/{cnt} | Recall@{k}: {sp_rec:.4f} | NDCG@{k}: {sp_ndcg:.4f}",
+            ])
 
     for label, key in [("Cold-Start Events (<5 prior interactions)", "cold_start"), ("Warm Events (>=5 prior interactions)", "warm")]:
         cnt = len(buckets[key]["pers_h"])
@@ -347,10 +349,14 @@ def run_offline_evaluation(
             sg_sum, sg_rec, sg_ndcg = _summarize_bucket(buckets[key]["glob_h"], buckets[key]["glob_n"])
             sr_sum, sr_rec, sr_ndcg = _summarize_bucket(buckets[key]["reg_h"], buckets[key]["reg_n"])
             sp_sum, sp_rec, sp_ndcg = _summarize_bucket(buckets[key]["pers_h"], buckets[key]["pers_n"])
-            print(f"\n{label} (N={cnt}):")
-            print(f"  Global Popularity   -> Hits@{k}: {sg_sum}/{cnt} | Recall@{k}: {sg_rec:.4f} | NDCG@{k}: {sg_ndcg:.4f}")
-            print(f"  Region + Popularity -> Hits@{k}: {sr_sum}/{cnt} | Recall@{k}: {sr_rec:.4f} | NDCG@{k}: {sr_ndcg:.4f}")
-            print(f"  Personalized Engine -> Hits@{k}: {sp_sum}/{cnt} | Recall@{k}: {sp_rec:.4f} | NDCG@{k}: {sp_ndcg:.4f}")
+            report_lines.extend([
+                f"\n{label} (N={cnt}):",
+                f"  Global Popularity   -> Hits@{k}: {sg_sum}/{cnt} | Recall@{k}: {sg_rec:.4f} | NDCG@{k}: {sg_ndcg:.4f}",
+                f"  Region + Popularity -> Hits@{k}: {sr_sum}/{cnt} | Recall@{k}: {sr_rec:.4f} | NDCG@{k}: {sr_ndcg:.4f}",
+                f"  Personalized Engine -> Hits@{k}: {sp_sum}/{cnt} | Recall@{k}: {sp_rec:.4f} | NDCG@{k}: {sp_ndcg:.4f}",
+            ])
+
+    logger.info("\n".join(report_lines))
 
 
 if __name__ == "__main__":

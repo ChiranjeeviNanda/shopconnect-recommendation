@@ -32,6 +32,7 @@ Rules:
 def _format_exception_details(exc: BaseException) -> str:
     """Extract extra diagnostic fields from an exception when available."""
     parts = [f"type={type(exc).__name__}", f"repr={exc!r}"]
+    # Inspect common SDK/HTTP error attributes without failing if absent
     for attr in ("code", "status_code", "status", "details", "response"):
         val = getattr(exc, attr, None)
         if val is not None:
@@ -49,13 +50,17 @@ def _fallback_explanation(item: dict[str, Any], context: dict[str, Any]) -> str:
 
     if region and home_region and region.lower() == home_region.lower():
         reasons.append(f"matches {region} home region")
+
+    # Prefer weekday-breakfast phrasing when both slot and weekday flags match
     if context.get("slot") == "breakfast" and context.get("is_weekday") and cook_time is not None:
         reasons.append(f"{cook_time} min weekday breakfast")
     elif cook_time is not None:
         reasons.append(f"{cook_time} min cook time")
+
     if goal:
         reasons.append(f"fits {goal} goal")
 
+    # Cap at two reasons to keep the fallback explanation concise
     detail = ", ".join(reasons[:2]) if reasons else "passes filters and scoring"
     return f"{item.get('name', 'Dish')}: {detail}."
 
@@ -95,6 +100,8 @@ def generate_grounded_explanations(
                     max_output_tokens=250,
                 ),
             )
+            # Strip bullet markers, list numbering, and blank lines so each
+            # non-empty line maps cleanly to a single recipe suggestion.
             lines = [
                 line.strip().lstrip("-*•0123456789. ").strip()
                 for line in (response.text or "").splitlines()
